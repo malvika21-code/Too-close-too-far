@@ -1,0 +1,130 @@
+
+
+import pygame
+import serial
+import time
+import random
+
+# Set up serial communication (replace 'COM3' with your Arduino port)
+ser = serial.Serial('COM3', 9600, timeout=1)
+time.sleep(2)  # Allow some time for the serial connection to initialize
+
+# Initialize Pygame
+pygame.init()
+
+# Define colors
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+GREEN = (0, 255, 0)
+RED = (255, 0, 0)
+YELLOW = (255, 255, 0)
+
+# Set up the display
+WIDTH, HEIGHT = 400, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Radar Detection Status with Mini-Game")
+
+# Font setup
+font = pygame.font.Font(None, 50)
+score_font = pygame.font.Font(None, 36)
+
+# Game variables
+player_pos = [WIDTH // 2, HEIGHT - 50]
+player_size = 50
+hazard_size = 50
+hazard_pos = [random.randint(0, WIDTH - hazard_size), 0]
+hazard_speed = 10
+score = 0
+game_over = False
+
+# Game loop
+def game_loop():
+    global player_pos, score, hazard_pos, hazard_speed, game_over
+
+    clock = pygame.time.Clock()
+    game_over = False
+    score = 0
+    hazard_pos = [random.randint(0, WIDTH - hazard_size), 0]
+
+    while not game_over:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return True
+
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_LEFT] and player_pos[0] > 0:
+            player_pos[0] -= 5
+        if keys[pygame.K_RIGHT] and player_pos[0] < WIDTH - player_size:
+            player_pos[0] += 5
+
+        # Move hazard
+        hazard_pos[1] += hazard_speed
+
+        # Check for collision
+        if (hazard_pos[1] >= HEIGHT - hazard_size and
+            hazard_pos[0] in range(player_pos[0], player_pos[0] + player_size)):
+            game_over = True
+
+        # Reset hazard if it goes off the screen
+        if hazard_pos[1] > HEIGHT:
+            hazard_pos = [random.randint(0, WIDTH - hazard_size), 0]
+            score += 1  # Increment score when hazard is avoided
+
+        # Draw everything
+        screen.fill(BLACK)
+        pygame.draw.rect(screen, GREEN, (player_pos[0], player_pos[1], player_size, player_size))
+        pygame.draw.rect(screen, RED, (hazard_pos[0], hazard_pos[1], hazard_size, hazard_size))
+
+        # Display score
+        score_text = score_font.render(f'Score: {score}', True, WHITE)
+        screen.blit(score_text, (10, 10))
+
+        pygame.display.flip()
+        clock.tick(30)
+
+    return False  # Game over, return control to main loop
+
+# Main loop to wait for status from Arduino
+running = True
+while running:
+    # Check if data is waiting from Arduino
+    if ser.in_waiting > 0:
+        status = ser.readline().decode('utf-8').strip()
+        print(f"Received: {status}")  # For debugging
+        
+        # Clear the screen
+        screen.fill(BLACK)
+
+        # Display the status
+        if status == "TOO CLOSE":
+            text = font.render("Too Close!", True, RED)
+            screen.blit(text, (WIDTH // 2 - text.get_width() // 2, HEIGHT // 2 - text.get_height() // 2))
+            running = game_loop()  # Start the mini-game
+        elif status == "TOO FAR":
+            text = font.render("Too Far!", True, YELLOW)
+            screen.blit(text, (WIDTH // 2 - text.get_width() // 2, HEIGHT // 2 - text.get_height() // 2))
+            running = game_loop()  # Start the mini-game
+        elif status == "SAFE":
+            text = font.render("Safe Zone", True, GREEN)
+            screen.blit(text, (WIDTH // 2 - text.get_width() // 2, HEIGHT // 2 - text.get_height() // 2))
+        else:
+            text = font.render("Waiting...", True, WHITE)
+
+        # Center the text on the screen
+        text_rect = text.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+        screen.blit(text, text_rect)
+
+        # Event handling
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+
+        # Update the display
+        pygame.display.flip()
+
+    # Limit the loop speed to reduce CPU usage
+    pygame.time.delay(100)
+
+# Clean up
+pygame.quit()
+ser.close()
